@@ -242,3 +242,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
 .danger-text{color:var(--danger)}
 .primary-text{color:var(--primary)}
 .mt8{margin-top:8px}
+/* iOS fix: 防止输入框聚焦自动放大 */
+input,select,textarea{font-size:16px}
+input[type=checkbox],input[type=radio]{width:auto}
+html,body{touch-action:manipulation;-webkit-text-size-adjust:100%}
