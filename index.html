@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>娃衣柜 · BJD 衣物管理</title>
+<meta name="description" content="BJD 娃娃衣物与订单管理工具：衣柜、照片、尾款提醒、支出统计，纯本地保存">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#6c5ce7">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">娃衣柜</div>
+    <button id="btnQuickAdd" class="btn btn-primary btn-sm">+ 记一笔</button>
+  </header>
+
+  <main id="pageContainer" class="page-container"></main>
+
+  <nav class="bottom-nav" id="bottomNav">
+    <button class="nav-item" data-page="home"><span class="nav-ico">看板</span></button>
+    <button class="nav-item" data-page="wardrobe"><span class="nav-ico">衣柜</span></button>
+    <button class="nav-item" data-page="dolls"><span class="nav-ico">娃娃</span></button>
+    <button class="nav-item" data-page="stats"><span class="nav-ico">统计</span></button>
+    <button class="nav-item" data-page="settings"><span class="nav-ico">设置</span></button>
+  </nav>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toast" class="toast"></div>
+
+<script src="js/utils.js"></script>
+<script src="js/db.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
