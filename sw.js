@@ -1,6 +1,6 @@
 /* sw.js - 离线缓存 */
 'use strict';
-const CACHE = 'bjd-wardrobe-v1';
+const CACHE = 'bjd-wardrobe-v2';
 const ASSETS = [
   './',
   './index.html',
