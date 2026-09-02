@@ -242,7 +242,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
 .danger-text{color:var(--danger)}
 .primary-text{color:var(--primary)}
 .mt8{margin-top:8px}
-/* iOS fix: 防止输入框聚焦自动放大 */
-input,select,textarea{font-size:16px}
+/* iOS fix: 防止输入框聚焦自动放大（必须>=16px且高优先级，覆盖下方13/14px规则） */
+input,select,textarea{font-size:16px !important}
 input[type=checkbox],input[type=radio]{width:auto}
 html,body{touch-action:manipulation;-webkit-text-size-adjust:100%}
