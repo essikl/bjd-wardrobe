@@ -8,8 +8,8 @@ const PHOTO_STORE = 'photos';
 function defaultData(){
   return {
     version: 1,
-    dolls: [],      // {id,name,size,note,createdAt}
-    items: [],      // {id,dollId,name,category,brand,shop,sizeNotes,status,purchaseDate,tags,note,photos:[photoId],createdAt,updatedAt}
+    dolls: [],      // {id,name,size,status,shop,purchaseDate,purchaseAmount,note,photos:[photoId],createdAt,updatedAt}
+    items: [],      // {id,dollId,name,category(主分类),categories(多分类数组),brand,shop,sizeNotes,status,purchaseDate,tags,note,photos:[photoId],createdAt,updatedAt}
     payments: [],   // {id,itemId,type,amount,paidDate,note,createdAt}
     reminders: []   // {id,itemId,kind,title,dueDate,workdays,startDate,note,done,doneAt,createdAt}
   };

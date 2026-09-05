@@ -10,6 +10,13 @@ const STATUSES = [
   {v: 'selling', t: '出闲置中'},
   {v: 'sold', t: '已出'}
 ];
+const DOLL_STATUSES = [
+  {v: 'keep', t: '收藏中'},
+  {v: 'idle', t: '闲置中'},
+  {v: 'selling', t: '出闲置中'},
+  {v: 'sold', t: '已出'},
+  {v: 'other', t: '其他'}
+];
 const PAY_TYPES = ['定金', '尾款', '补款', '全款', '邮费', '其他'];
 const REM_KINDS = ['补款', '发货', '抢购/上新', '其他'];
 const COMMON_SIZES = ['三分', '四分', '六分', '八分', 'OB11', '其他'];
@@ -18,7 +25,7 @@ const DOLL_ALL = ''; // item.dollId === '' 表示通用/未指定
 /* ================= 全局状态 ================= */
 let data = loadData();
 let currentPage = 'home';
-let state = {query: '', dollFilter: '', statusFilter: '', catFilter: ''};
+let state = {query: '', dollFilter: '', statusFilter: '', catFilters: []};
 
 const pageEl = () => document.getElementById('pageContainer');
 
@@ -32,7 +39,45 @@ function undoneReminders(){ return data.reminders.filter(r => !r.done); }
 function sumPayments(list){ return list.reduce((s,p)=>s + (Number(p.amount)||0), 0); }
 function itemSpent(itemId){ return sumPayments(data.payments.filter(p=>p.itemId===itemId)); }
 function itemStatusText(v){ const s = STATUSES.find(x=>x.v===v); return s ? s.t : '未知'; }
-function catOf(item){ return item && CATEGORIES.includes(item.category) ? item.category : '其他'; }
+function dollStatusText(v){
+  if(!v) return '未设置';
+  const s = DOLL_STATUSES.find(x => x.v === v);
+  return s ? s.t : '未设置';
+}
+/* 一个条目的全部分类（多选）；旧数据只有单值 category 时自动兼容 */
+function catsOfItem(item){
+  if(item && Array.isArray(item.categories) && item.categories.length) return item.categories.slice();
+  if(item && item.category && CATEGORIES.includes(item.category)) return [item.category];
+  return ['其他'];
+}
+/* 主分类 = 多分类第一顺位；统计按主分类归属，保证分类合计不重复不漏算 */
+function catOf(item){ const cs = catsOfItem(item); return cs[0] || '其他'; }
+
+/* 多分类 chips 渲染与绑定（第一个为主分类） */
+function catsChipsHtml(selectedCats){
+  const sel = selectedCats || [];
+  return CATEGORIES.map(c => {
+    const active = sel.includes(c);
+    const isMain = active && sel[0] === c;
+    return '<button type="button" class="chip' + (active ? ' selected' : '') + (isMain ? ' main' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + (isMain ? '<em class="chip-main-mark">主</em>' : '') + '</button>';
+  }).join('');
+}
+function bindCatsChips(container, working){
+  container.querySelectorAll('.chip').forEach(ch => {
+    ch.addEventListener('click', () => {
+      const c = ch.dataset.cat;
+      const i = working.selectedCats.indexOf(c);
+      if(i >= 0){
+        if(working.selectedCats.length === 1){ toast('至少保留一个分类'); return; }
+        working.selectedCats.splice(i, 1);
+      }else{
+        working.selectedCats.push(c);
+      }
+      container.innerHTML = catsChipsHtml(working.selectedCats);
+      bindCatsChips(container, working);
+    });
+  });
+}
 
 function sortedUpcoming(){
   return undoneReminders()
@@ -128,7 +173,7 @@ async function render(){
   try{
     if(currentPage === 'home') await renderHome(el);
     else if(currentPage === 'wardrobe') await renderWardrobe(el);
-    else if(currentPage === 'dolls') renderDolls(el);
+    else if(currentPage === 'dolls') await renderDolls(el);
     else if(currentPage === 'stats') renderStats(el);
     else if(currentPage === 'settings') renderSettings(el);
   }catch(err){
@@ -206,7 +251,7 @@ async function renderWardrobe(el){
   let list = data.items.filter(it => {
     if(state.dollFilter && it.dollId !== state.dollFilter) return false;
     if(state.statusFilter && it.status !== state.statusFilter) return false;
-    if(state.catFilter && catOf(it) !== state.catFilter) return false;
+    if(state.catFilters.length && !state.catFilters.some(c => catsOfItem(it).includes(c))) return false;
     if(q){
       const hay = [it.name, it.brand, it.shop, it.note, it.tags, it.sizeNotes].join(' ').toLowerCase();
       if(hay.indexOf(q) < 0) return false;
@@ -232,6 +277,7 @@ async function renderWardrobe(el){
         '<div class="item-badges">' +
           '<span class="badge ' + catCls + '">' + esc(itemStatusText(it.status)) + '</span>' +
           '<span class="badge gray">' + esc(catOf(it)) + '</span>' +
+          catsOfItem(it).slice(1).map(c => '<span class="badge gray">' + esc(c) + '</span>').join('') +
           (it.purchaseDate ? '<span class="badge gray">' + esc(it.purchaseDate.slice(0,7)) + '</span>' : '') +
           (unpaidRem ? '<span class="badge danger">待补尾款</span>' : '') +
         '</div>' +
@@ -246,21 +292,29 @@ async function renderWardrobe(el){
     '<div class="filters">' +
       '<select id="fDoll"><option value="">全部娃娃</option>' + data.dolls.map(d=>'<option value="' + esc(d.id) + '"' + (state.dollFilter===d.id?' selected':'') + '>' + esc(d.name) + '（' + esc(d.size||'') + '）</option>').join('') + '<option value="__all__"' + (state.dollFilter==='__all__'?' selected':'') + '>通用/无主</option></select>' +
       '<select id="fStatus"><option value="">全部状态</option>' + STATUSES.map(s=>'<option value="' + s.v + '"' + (state.statusFilter===s.v?' selected':'') + '>' + esc(s.t) + '</option>').join('') + '</select>' +
-      '<select id="fCat"><option value="">全部分类</option>' + CATEGORIES.map(c=>'<option value="' + esc(c) + '"' + (state.catFilter===c?' selected':'') + '>' + esc(c) + '</option>').join('') + '</select>' +
+    '</div>' +
+    '<div class="cat-filter-wrap"><div class="cat-filter-title">分类筛选（可多选，选中任一分组的衣物都会显示）</div>' +
+      '<div class="chips">' + CATEGORIES.map(c => '<button type="button" class="chip' + (state.catFilters.includes(c)?' selected':'') + '" data-cat-f="' + esc(c) + '">' + esc(c) + '</button>').join('') + '</div>' +
     '</div>' +
     (list.length === 0
       ? '<div class="empty"><div class="empty-title">衣柜还是空的</div>点右上角「记一笔」，把第一件娃衣收进来吧。</div>'
       : '<div class="grid-list">' + cards.join('') + '</div>');
 
-  const s = el.querySelector('#fSearch'), sd = el.querySelector('#fDoll'), ss = el.querySelector('#fStatus'), sc = el.querySelector('#fCat');
+  const s = el.querySelector('#fSearch'), sd = el.querySelector('#fDoll'), ss = el.querySelector('#fStatus');
   s.addEventListener('input', () => { state.query = s.value; renderWardrobe(pageEl()); });
   sd.addEventListener('change', () => { state.dollFilter = sd.value; renderWardrobe(pageEl()); });
   ss.addEventListener('change', () => { state.statusFilter = ss.value; renderWardrobe(pageEl()); });
-  sc.addEventListener('change', () => { state.catFilter = sc.value; renderWardrobe(pageEl()); });
+  el.querySelectorAll('[data-cat-f]').forEach(ch => ch.addEventListener('click', () => {
+    const c = ch.dataset.catF;
+    const i = state.catFilters.indexOf(c);
+    if(i >= 0) state.catFilters.splice(i, 1);
+    else state.catFilters.push(c);
+    renderWardrobe(pageEl());
+  }));
 }
 
 /* ================= 娃娃 ================= */
-function renderDolls(el){
+async function renderDolls(el){
   const dollStats = data.dolls.map(d => {
     const its = itemsByDoll(d.id);
     const spent = sumPayments(data.payments.filter(p => {
@@ -276,20 +330,41 @@ function renderDolls(el){
     return it && it.dollId === DOLL_ALL;
   }));
 
+  // 异步加载每个娃娃的首张照片（沿用衣柜照片存储机制：record.itemId = doll.id）
+  const thumbs = {};
+  await Promise.all(data.dolls.map(async d => {
+    try{
+      const phs = await photosByItem(d.id);
+      if(phs && phs[0] && phs[0].blob) thumbs[d.id] = URL.createObjectURL(phs[0].blob);
+    }catch(e){ /* 忽略单张失败 */ }
+  }));
+
   let html = '';
   html += '<div class="actions-row" style="margin-bottom:10px"><button class="btn btn-primary" data-act="add-doll">+ 添加娃娃</button></div>';
   if(data.dolls.length === 0 && genCount === 0){
-    html += '<div class="empty"><div class="empty-title">还没有娃娃档案</div>先添加你的娃娃（尺寸可选三分/四分/六分等），衣物就能按娃归类了。</div>';
+    html += '<div class="empty"><div class="empty-title">还没有娃娃档案</div>先添加你的娃娃（可记录照片、购入金额/日期、店名与状态），衣物就能按娃归类了。</div>';
     return el.innerHTML = html;
   }
 
   const rows = dollStats.map(x => {
     const d = x.d;
+    const stTxt = dollStatusText(d.status);
+    const stBadge = stTxt && stTxt !== '未设置'
+      ? '<span class="badge ' + (d.status === 'selling' ? 'info' : (d.status === 'sold' ? 'gray' : 'warn')) + '">' + esc(stTxt) + '</span>' : '';
+    const subParts = [];
+    if(d.shop) subParts.push('店 ' + d.shop);
+    if(d.purchaseDate) subParts.push(d.purchaseDate.slice(0,7) + ' 购入');
+    if(Number(d.purchaseAmount) > 0) subParts.push('娃 ¥' + fmtMoney(d.purchaseAmount));
+    if(x.count) subParts.push('衣物 ' + x.count + ' 件');
+    if(x.inTransit) subParts.push('在途 ' + x.inTransit);
+    if(x.spent > 0) subParts.push('衣物支出 ¥' + fmtMoney(x.spent));
+    if(d.note) subParts.push(d.note);
+    const thumbUrl = thumbs[d.id] || '';
     return '<div class="card" style="padding:0 14px"><div class="row" data-act="edit-doll" data-id="' + esc(d.id) + '">' +
-      '<div class="row-avatar">' + esc((d.name||'娃')[0]) + '</div>' +
+      '<div class="row-avatar">' + (thumbUrl ? '<img src="' + thumbUrl + '" alt="">' : esc((d.name||'娃')[0])) + '</div>' +
       '<div class="row-body">' +
-        '<div class="row-title">' + esc(d.name) + ' <span class="badge gray">' + esc(d.size || '尺寸未填') + '</span></div>' +
-        '<div class="row-sub">' + (d.note ? esc(d.note) + ' · ' : '') + '衣物 ' + x.count + ' 件 · 在途 ' + x.inTransit + ' · 支出 ¥' + fmtMoney(x.spent) + '</div>' +
+        '<div class="row-title">' + esc(d.name) + ' <span class="badge gray">' + esc(d.size || '尺寸未填') + '</span>' + stBadge + '</div>' +
+        '<div class="row-sub">' + (subParts.length ? esc(subParts.join(' · ')) : '点击编辑补充购入信息') + '</div>' +
       '</div>' +
       '<div class="row-right">编辑</div>' +
     '</div></div>';
@@ -366,6 +441,7 @@ function renderStats(el){
   html += '</div>';
 
   html += '<div class="card"><div class="card-title">按分类</div>';
+  html += '<div class="muted" style="font-size:11px;margin:-2px 0 10px">多分类衣物按其主分类归属统计，一件衣物只计入一处，避免重复。</div>';
   if(cats.length === 0){ html += '<div class="muted">暂无数据</div>'; }
   else{
     html += cats.map(x =>
@@ -432,31 +508,80 @@ function renderSettings(el){
 /* ================= 娃娃编辑 ================= */
 function openDollEditor(dollId){
   const d = dollId ? dollById(dollId) : null;
+  let working = {
+    photos: d ? (d.photos || []).slice() : [],       // 照片 id 顺序（与衣物一致）
+    newPhotoIds: [],                                  // 本次新增照片（未保存前若取消则删除）
+    removedPhotos: [],                                // 本次删除的旧照片 id
+    saved: false
+  };
+  const statusOpts = '<option value="">未设置</option>' +
+    DOLL_STATUSES.map(s => '<option value="' + s.v + '"' + (d && d.status === s.v ? ' selected' : '') + '>' + esc(s.t) + '</option>').join('');
+
   const m = openModal({
     title: d ? '编辑娃娃' : '添加娃娃',
     body: '' +
-      '<div class="form-group"><label>名字</label><input type="text" id="d_name" placeholder="例如：云朵" value="' + esc(d ? d.name : '') + '"></div>' +
-      '<div class="form-group"><label>尺寸</label><input type="text" id="d_size" list="dollSizes" placeholder="三分 / 四分 / 六分…" value="' + esc(d ? (d.size||'') : '') + '"><datalist id="dollSizes">' + COMMON_SIZES.map(s=>'<option value="' + esc(s) + '">').join('') + '</datalist></div>' +
-      '<div class="form-group"><label>备注</label><textarea id="d_note" placeholder="肤色、素体型号、偏好风格…">' + esc(d ? d.note : '') + '</textarea></div>',
-    footer: '<button class="btn" data-m-cancel>取消</button><button class="btn btn-primary" data-m-ok>保存</button>'
+      '<div class="form-group"><label>名字 *</label><input type="text" id="d_name" placeholder="例如：云朵" value="' + esc(d ? d.name : '') + '"></div>' +
+      '<div class="form-row">' +
+        '<div class="form-group"><label>尺寸</label><input type="text" id="d_size" list="dollSizes" placeholder="三分 / 四分 / 六分…" value="' + esc(d ? (d.size||'') : '') + '"><datalist id="dollSizes">' + COMMON_SIZES.map(s=>'<option value="' + esc(s) + '">').join('') + '</datalist></div>' +
+        '<div class="form-group"><label>状态</label><select id="d_status">' + statusOpts + '</select></div>' +
+      '</div>' +
+      '<div class="form-row">' +
+        '<div class="form-group"><label>购入日期</label><input type="date" id="d_pdate" value="' + esc(d ? (d.purchaseDate || '') : '') + '"></div>' +
+        '<div class="form-group"><label>购入金额（¥）</label><input type="number" id="d_amount" placeholder="0.00" min="0" step="0.01" inputmode="decimal" value="' + esc(d ? (d.purchaseAmount != null ? d.purchaseAmount : '') : '') + '"></div>' +
+      '</div>' +
+      '<div class="form-group"><label>店名 / 购入店铺</label><input type="text" id="d_shop" placeholder="例如：XX 娃社 / 某鱼收的" value="' + esc(d ? (d.shop || '') : '') + '"></div>' +
+      '<div class="form-group"><label>备注</label><textarea id="d_note" placeholder="肤色、素体型号、妆面、偏好风格…">' + esc(d ? d.note : '') + '</textarea></div>' +
+      '<div class="section-title">照片</div>' +
+      '<div id="dollPhBox"></div>' +
+      '<div class="muted">娃娃照片同样只存本机（IndexedDB），可在「设置 → 导出含照片」时一并备份。</div>',
+    footer: '<button class="btn" data-m-cancel>取消</button><button class="btn btn-primary" data-m-ok>保存</button>',
+    onClose: () => {
+      if(!working.saved){
+        working.newPhotoIds.forEach(pid => { photoDelete(pid).catch(()=>{}); });
+      }
+    }
   });
   m.footEl.querySelector('[data-m-cancel]').addEventListener('click', m.close);
   m.footEl.querySelector('[data-m-ok]').addEventListener('click', () => {
     const name = m.bodyEl.querySelector('#d_name').value.trim();
     if(!name){ toast('请填写娃娃名字'); return; }
     const size = m.bodyEl.querySelector('#d_size').value.trim();
+    const status = m.bodyEl.querySelector('#d_status').value;
+    const purchaseDate = m.bodyEl.querySelector('#d_pdate').value;
+    const purchaseAmount = parseFloat(m.bodyEl.querySelector('#d_amount').value) || 0;
+    const shop = m.bodyEl.querySelector('#d_shop').value.trim();
     const note = m.bodyEl.querySelector('#d_note').value.trim();
+    const nowIso = new Date().toISOString();
+    let id;
     if(d){
-      d.name = name; d.size = size; d.note = note;
-      toast('已保存');
+      d.name = name; d.size = size; d.status = status;
+      d.purchaseDate = purchaseDate; d.purchaseAmount = purchaseAmount;
+      d.shop = shop; d.note = note;
+      d.photos = working.photos.slice();
+      d.updatedAt = nowIso;
+      id = d.id;
     }else{
-      data.dolls.push({id: uid(), name, size, note, createdAt: new Date().toISOString()});
-      toast('娃娃已添加');
+      id = uid();
+      data.dolls.push({id, name, size, status, purchaseDate, purchaseAmount, shop, note, photos: [], createdAt: nowIso, updatedAt: nowIso});
+      const nd = data.dolls.find(x => x.id === id);
+      if(nd) nd.photos = working.photos.slice();
     }
+    // 本次新增照片若以空 ownerId 暂存，这里回写娃娃 id（与衣物保存逻辑一致）
+    Promise.all(working.newPhotoIds.map(pid =>
+      photoGet(pid).then(rec => {
+        if(rec && rec.blob && rec.itemId !== id){
+          return photoPut({id: pid, itemId: id, blob: rec.blob});
+        }
+      }).catch(()=>{})
+    )).catch(()=>{});
+    working.removedPhotos.forEach(pid => photoDelete(pid).catch(()=>{}));
     save();
+    working.saved = true;
+    toast(d ? '已保存' : '娃娃已添加');
     m.close();
     render();
   });
+  renderPhBox(m.bodyEl, working, d ? d.id : '', '#dollPhBox');
 }
 
 /* ================= 衣物编辑（核心） ================= */
@@ -466,6 +591,7 @@ function openItemEditor(itemId){
     photos: item ? item.photos.slice() : [],       // 照片 id 顺序
     newPhotoIds: [],                                // 本次新增照片（未保存前若取消则删除）
     removedPhotos: [],                              // 本次删除的旧照片 id
+    selectedCats: item ? catsOfItem(item) : ['全套'], // 多分类（首个为主分类；旧数据只有单值 category 时兼容）
     payBuffer: [],                                  // 新增付款（保存时写入）
     remBuffer: [],                                  // 新增提醒（保存时写入）
     isNew: !item
@@ -482,10 +608,8 @@ function openItemEditor(itemId){
         '<div class="form-group"><label>所属娃娃</label><select id="f_doll">' + dollOpts + '</select></div>' +
         '<div class="form-group"><label>状态</label><select id="f_status">' + STATUSES.map(s=>'<option value="' + s.v + '"' + (item&&item.status===s.v?' selected':'') + '>' + esc(s.t) + '</option>').join('') + '</select></div>' +
       '</div>' +
-      '<div class="form-row">' +
-        '<div class="form-group"><label>分类</label><select id="f_cat">' + CATEGORIES.map(c=>'<option value="' + esc(c) + '"' + (item&&item.category===c?' selected':'') + '>' + esc(c) + '</option>').join('') + '</select></div>' +
-        '<div class="form-group"><label>购入时间</label><input type="date" id="f_pdate" value="' + esc(item ? (item.purchaseDate||'') : todayStr()) + '"></div>' +
-      '</div>' +
+      '<div class="form-group"><label>分类（可多选，点标签切换；勾选多个时第一项为主分类）</label><div class="chips" id="catChips"></div></div>' +
+      '<div class="form-group"><label>购入时间</label><input type="date" id="f_pdate" value="' + esc(item ? (item.purchaseDate||'') : todayStr()) + '"></div>' +
       '<div class="form-row">' +
         '<div class="form-group"><label>品牌 / 店名</label><input type="text" id="f_brand" value="' + esc(item ? item.brand : '') + '"></div>' +
         '<div class="form-group"><label>店铺链接/单号</label><input type="text" id="f_shop" value="' + esc(item ? item.shop : '') + '"></div>' +
@@ -539,7 +663,8 @@ function openItemEditor(itemId){
   m.footEl.querySelector('[data-m-save]').addEventListener('click', () => saveItemFromModal(item, m, working));
 
   // 初始渲染子区块
-  renderPhBox(m.bodyEl, working, item);
+  renderPhBox(m.bodyEl, working, item ? item.id : '');
+  bindCatsChips(m.bodyEl, working);
   renderPayList(m.bodyEl, item, working);
   renderRemList(m.bodyEl, item, working);
 
@@ -579,34 +704,10 @@ function openItemEditor(itemId){
     hint.textContent = start + ' 起 ' + wd + ' 个工作日 ≈ ' + natural + ' 个自然日，约 ' + daysToMonthText(natural) + '，到期日（已跳过周末）：' + due + '（法定节假日未扣除）';
   });
 
-  // 照片添加
-  m.bodyEl.querySelector('#phAddBtn').addEventListener('click', () => {
-    const fi = document.createElement('input');
-    fi.type = 'file';
-    fi.accept = 'image/*';
-    fi.multiple = true;
-    fi.addEventListener('change', async () => {
-      const files = Array.from(fi.files || []);
-      for(const f of files){
-        try{
-          const blob = await compressImageFile(f, 1000);
-          const pid = uid();
-          await photoPut({id: pid, itemId: item ? item.id : '', blob});
-          working.photos.push(pid);
-          working.newPhotoIds.push(pid);
-          renderPhBox(m.bodyEl, working, item);
-        }catch(e){
-          if(e.message === 'not-image') toast('只能选择图片文件');
-          else toast('照片处理失败');
-        }
-      }
-    });
-    fi.click();
-  });
 }
 
-function renderPhBox(bodyEl, working, item){
-  const box = bodyEl.querySelector('#phBox');
+function renderPhBox(bodyEl, working, ownerId, boxId){
+  const box = bodyEl.querySelector(boxId || '#phBox');
   if(!box) return;
   let html = '<div class="photo-grid">';
   working.photos.forEach(pid => {
@@ -634,7 +735,7 @@ function renderPhBox(bodyEl, working, item){
     }else{
       working.removedPhotos.push(pid);
     }
-    renderPhBox(bodyEl, working, item);
+    renderPhBox(bodyEl, working, ownerId, boxId);
   }));
   const imgs = box.querySelectorAll('[data-ph-img]');
   imgs.forEach(img => img.addEventListener('click', () => {
@@ -642,7 +743,7 @@ function renderPhBox(bodyEl, working, item){
       if(rec && rec.blob){ lightboxBlob(rec.blob); }
     }).catch(()=>{});
   }));
-  // 重新挂载添加按钮
+  // 添加照片按钮（保存时通过 ownerId 回写归属）
   const addBtn = box.querySelector('#phAddBtn');
   addBtn.style.display = 'flex';
   addBtn.addEventListener('click', () => {
@@ -653,9 +754,9 @@ function renderPhBox(bodyEl, working, item){
         try{
           const blob = await compressImageFile(f, 1000);
           const pid = uid();
-          await photoPut({id: pid, itemId: item ? item.id : '', blob});
+          await photoPut({id: pid, itemId: ownerId || '', blob});
           working.photos.push(pid); working.newPhotoIds.push(pid);
-          renderPhBox(bodyEl, working, item);
+          renderPhBox(bodyEl, working, ownerId, boxId);
         }catch(e){ toast(e.message === 'not-image' ? '只能选择图片文件' : '照片处理失败'); }
       }
     });
@@ -737,7 +838,10 @@ function saveItemFromModal(item, m, working){
   if(!name){ toast('请填写衣物名称'); return; }
   const dollId = m.bodyEl.querySelector('#f_doll').value;
   const status = m.bodyEl.querySelector('#f_status').value;
-  const category = m.bodyEl.querySelector('#f_cat').value;
+  const cats = (working.selectedCats || []).filter(Boolean);
+  if(cats.length === 0) cats.push('全套');
+  const category = cats[0]; // 主分类，同时写回单值字段兼容旧统计/导出
+  const categories = cats.slice();
   const purchaseDate = m.bodyEl.querySelector('#f_pdate').value;
   const brand = m.bodyEl.querySelector('#f_brand').value.trim();
   const shop = m.bodyEl.querySelector('#f_shop').value.trim();
@@ -748,14 +852,15 @@ function saveItemFromModal(item, m, working){
   const nowIso = new Date().toISOString();
   let id;
   if(item){
-    item.name = name; item.dollId = dollId; item.status = status; item.category = category;
+    item.name = name; item.dollId = dollId; item.status = status;
+    item.categories = categories; item.category = category;
     item.purchaseDate = purchaseDate; item.brand = brand; item.shop = shop;
     item.sizeNotes = sizeNotes; item.tags = tags; item.note = note;
     item.updatedAt = nowIso;
     id = item.id;
   }else{
     id = uid();
-    data.items.push({id, dollId, name, category, brand, shop, sizeNotes, status, purchaseDate, tags, note, photos: [], createdAt: nowIso, updatedAt: nowIso});
+    data.items.push({id, dollId, name, category, categories, brand, shop, sizeNotes, status, purchaseDate, tags, note, photos: [], createdAt: nowIso, updatedAt: nowIso});
   }
   // 照片：更新条目照片列表；新照片若 itemId 不匹配则回写归属
   const cur = item ? item : data.items.find(x => x.id === id);
