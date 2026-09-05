@@ -664,7 +664,8 @@ function openItemEditor(itemId){
 
   // 初始渲染子区块
   renderPhBox(m.bodyEl, working, item ? item.id : '');
-  bindCatsChips(m.bodyEl, working);
+  const _catBox = m.bodyEl.querySelector('#catChips');
+  if(_catBox){ _catBox.innerHTML = catsChipsHtml(working.selectedCats); bindCatsChips(_catBox, working); }
   renderPayList(m.bodyEl, item, working);
   renderRemList(m.bodyEl, item, working);
 
